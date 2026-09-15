@@ -1,0 +1,306 @@
+
+
+
+
+Media Over QUIC                                                A. Sharma
+Internet-Draft                                                      Meta
+Intended status: Standards Track                       15 September 2026
+Expires: 19 March 2027
+
+
+       Atomic Subscription Bundles for Media over QUIC Transport
+          draft-sharma-moq-atomic-subscription-bundles-latest
+
+Abstract
+
+   This document defines a Media over QUIC Transport (MOQT) extension
+   for atomically changing the Forward State of a set of established
+   subscriptions.  It allows a subscriber to replace one set of Tracks
+   with another without an intermediate partially switched state at its
+   peer.
+
+About This Document
+
+   This note is to be removed before publishing as an RFC.
+
+   The latest revision of this draft can be found at
+   https://sharmafb.github.io/draft-sharma-moq-atomic-subscription-
+   bundles/draft-sharma-moq-atomic-subscription-bundles.html.  Status
+   information for this document may be found at
+   https://datatracker.ietf.org/doc/draft-sharma-moq-atomic-
+   subscription-bundles/.
+
+   Discussion of this document takes place on the Media Over QUIC
+   Working Group mailing list (mailto:moq@ietf.org), which is archived
+   at https://mailarchive.ietf.org/arch/browse/moq/.  Subscribe at
+   https://www.ietf.org/mailman/listinfo/moq/.
+
+   Source for this draft and an issue tracker can be found at
+   https://github.com/sharmafb/draft-sharma-moq-atomic-subscription-
+   bundles.
+
+Status of This Memo
+
+   This Internet-Draft is submitted in full conformance with the
+   provisions of BCP 78 and BCP 79.
+
+   Internet-Drafts are working documents of the Internet Engineering
+   Task Force (IETF).  Note that other groups may also distribute
+   working documents as Internet-Drafts.  The list of current Internet-
+   Drafts is at https://datatracker.ietf.org/drafts/current/.
+
+   Internet-Drafts are draft documents valid for a maximum of six months
+   and may be updated, replaced, or obsoleted by other documents at any
+   time.  It is inappropriate to use Internet-Drafts as reference
+   material or to cite them other than as "work in progress."
+
+   This Internet-Draft will expire on 19 March 2027.
+
+Copyright Notice
+
+   Copyright (c) 2026 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents (https://trustee.ietf.org/
+   license-info) in effect on the date of publication of this document.
+   Please review these documents carefully, as they describe your rights
+   and restrictions with respect to this document.  Code Components
+   extracted from this document must include Revised BSD License text as
+   described in Section 4.e of the Trust Legal Provisions and are
+   provided without warranty as described in the Revised BSD License.
+
+Table of Contents
+
+   1.  Introduction
+   2.  Conventions and Definitions
+   3.  Negotiation
+   4.  Preparing a Bundle
+   5.  BUNDLE_SWITCH
+   6.  Atomicity and Media Alignment
+   7.  Relay Processing
+   8.  Security Considerations
+   9.  IANA Considerations
+   10. Normative References
+   Acknowledgments
+   Change Log
+     draft-sharma-moq-atomic-subscription-bundles-00
+   Use of Generative AI
+   Author's Address
+
+1.  Introduction
+
+   Applications often consume Tracks as a unit.  A sports presentation
+   can contain video, commentary, and captions, while a monitoring view
+   can contain several camera Tracks.  Switching each subscription
+   independently can briefly activate only part of the destination set
+   or forward both the old and new sets.
+
+   This document defines BUNDLE_SWITCH, a one-shot operation over
+   established subscriptions on one MOQT Session.  The subscriber
+   normally prepares the destination subscriptions with Forward State 0,
+   then atomically deactivates the old set and activates the new set.
+   The subscriptions remain independent after the switch; this extension
+   creates no persistent bundle object.
+
+   Atomicity applies to Forward State at the immediate peer.  It does
+   not guarantee simultaneous Object arrival or presentation, and data
+   already in flight can still arrive after a switch.
+
+2.  Conventions and Definitions
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   BCP 14 [RFC2119] [RFC8174] when, and only when, they appear in all
+   capitals, as shown here.
+
+   This document uses the terms Object, Track, Subscription, Forward
+   State, Publisher, Subscriber, Relay, and Request ID as defined in
+   [MOQT].
+
+   Activation Set:  Established subscriptions whose Forward State
+      changes from 0 to 1.
+
+   Deactivation Set:  Established subscriptions whose Forward State
+      changes from 1 to 0.
+
+   Commit:  The single logical transition at which every requested
+      Forward State change takes effect.
+
+3.  Negotiation
+
+   Support is negotiated with the ATOMIC_SUBSCRIPTION_BUNDLES Setup
+   Option.  Its even-numbered Option Type is TBD1 and its value is a
+   variable-length integer capability bit mask.  Bit 0x01 enables
+   BUNDLE_SWITCH; unknown bits are ignored.
+
+   The capability is negotiated when both endpoints advertise bit 0x01.
+   An endpoint MUST NOT send BUNDLE_SWITCH otherwise.  The 0-RTT
+   requirements of [MOQT] apply; a client MUST NOT use the extension in
+   0-RTT unless it has remembered peer support.
+
+4.  Preparing a Bundle
+
+   Every bundle member is an Established subscription on the same
+   Session.  The subscriber SHOULD establish each destination
+   subscription with Forward State 0 and wait for SUBSCRIBE_OK before
+   sending BUNDLE_SWITCH.  Filters, priorities, and other subscription
+   parameters are configured on the subscription's own request stream
+   and are not changed by BUNDLE_SWITCH.
+
+   Preparing subscriptions in Forward State 0 allows failures to be
+   detected while the current bundle continues forwarding.  It can
+   consume state at the Publisher or its upstream peers, but does not
+   send Object payloads to the subscriber.
+
+   After sending BUNDLE_SWITCH and before receiving its response, the
+   subscriber MUST NOT update or cancel a referenced subscription.
+
+5.  BUNDLE_SWITCH
+
+   BUNDLE_SWITCH is a request sent as the first message on a new
+   bidirectional stream.  It consumes a Request ID under the rules of
+   [MOQT].
+
+   BUNDLE_SWITCH Message {
+     Type (vi64) = TBD2,
+     Length (16),
+     Request ID (vi64),
+     Number of Deactivating Subscriptions (vi64),
+     Deactivating Subscription Request ID (vi64) ...,
+     Number of Activating Subscriptions (vi64),
+     Activating Subscription Request ID (vi64) ...,
+   }
+
+   The subscription Request IDs identify existing SUBSCRIBE requests,
+   not Track Aliases.  Each ID MUST occur exactly once, the two sets
+   MUST be disjoint, and the combined number of IDs MUST be non-zero.
+   All referenced subscriptions MUST have been initiated by the sender
+   on this Session.  Each deactivating subscription MUST be Established
+   with Forward State 1, and each activating subscription MUST be
+   Established with Forward State 0.
+
+   The Publisher validates every member before changing any Forward
+   State.  If a member is invalid, unauthorized, terminated, or cannot
+   be activated, the Publisher MUST send REQUEST_ERROR and leave all
+   referenced subscriptions unchanged.  INVALID_BUNDLE (TBD3) is used
+   for an invalid member list or state; other errors such as
+   UNAUTHORIZED, TIMEOUT, and EXCESSIVE_LOAD retain their MOQT meanings.
+
+   Once all members are ready, the Publisher commits the switch.  No
+   Object from an activating subscription can be scheduled as a result
+   of the switch until the Publisher has stopped scheduling Objects from
+   every deactivating subscription.  The normal MOQT rules for Forward
+   State changes and outstanding Subgroup streams apply.  At Commit, the
+   Publisher MUST save the current Largest Location of each activating
+   subscription as its Joining Location when Objects have been published
+   on that Track.
+
+   The Publisher then sends REQUEST_OK on the BUNDLE_SWITCH stream; this
+   response is called BUNDLE_SWITCH_OK.  Its Parameters and Track
+   Properties MUST be empty.  The Publisher MUST serialize BUNDLE_SWITCH
+   with any other operation that changes a referenced Forward State, so
+   validation and Commit use one consistent state.
+
+   The deactivated subscriptions remain Established with Forward State
+   0.  They can be reactivated by a later BUNDLE_SWITCH or terminated
+   using normal MOQT procedures.  A failure after Commit affects
+   subscriptions independently and does not roll the switch back.
+
+6.  Atomicity and Media Alignment
+
+   Commit is an atomic control-plane transition at one Publisher or
+   Relay.  QUIC streams are independent, so Objects sent before Commit
+   can arrive after Objects from the Activation Set. The extension does
+   not align Groups, timestamps, or media presentation points across
+   Tracks.  Applications that require a seamless presentation switch
+   need compatible media boundaries or application metadata.
+
+   The operation is scoped to one MOQT Session.  It cannot atomically
+   switch subscriptions held on different peers or Sessions.
+
+7.  Relay Processing
+
+   Request IDs are Session-local, so a Relay MUST NOT forward
+   BUNDLE_SWITCH unchanged.  It performs the downstream Commit locally
+   and MAY prepare or update upstream subscriptions as needed.  If it
+   cannot make every activating subscription ready, it fails the
+   downstream operation without changing the referenced downstream
+   Forward States.
+
+   Other downstream subscribers and upstream Forward States are outside
+   the atomicity guarantee.
+
+8.  Security Considerations
+
+   The security considerations of [MOQT] apply.  BUNDLE_SWITCH does not
+   bypass authorization on any member subscription.  A Publisher MUST
+   reject a Request ID that does not identify an eligible subscription
+   initiated by the sender.
+
+   Large bundles and prepared subscriptions can consume state.
+   Implementations SHOULD limit bundle size and pending duration and MAY
+   reject an operation with EXCESSIVE_LOAD.  A malicious peer cannot use
+   BUNDLE_SWITCH to alter another Session's subscriptions because
+   Request IDs are Session-local.
+
+9.  IANA Considerations
+
+   This document requests the following provisional registrations:
+
+   +=============+======+=============================+===============+
+   |Registry     | Value| Name                        | Specification |
+   +=============+======+=============================+===============+
+   |MOQT Setup   |  TBD1| ATOMIC_SUBSCRIPTION_BUNDLES | Section 3     |
+   |Options      |(even)|                             |               |
+   +-------------+------+-----------------------------+---------------+
+   |MOQT Message |  TBD2| BUNDLE_SWITCH               | Section 5     |
+   |Types        |      |                             |               |
+   +-------------+------+-----------------------------+---------------+
+   |MOQT         |  TBD3| INVALID_BUNDLE              | Section 5     |
+   |REQUEST_ERROR|      |                             |               |
+   |Codes        |      |                             |               |
+   +-------------+------+-----------------------------+---------------+
+
+                                 Table 1
+
+10.  Normative References
+
+   [MOQT]     Nandakumar, S., Vasiliev, V., Swett, I., and A. Frindell,
+              "Media over QUIC Transport", Work in Progress, Internet-
+              Draft, draft-ietf-moq-transport-21, 8 September 2026,
+              <https://datatracker.ietf.org/doc/html/draft-ietf-moq-
+              transport-21>.
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119,
+              DOI 10.17487/RFC2119, March 1997,
+              <https://www.rfc-editor.org/rfc/rfc2119>.
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC
+              2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174,
+              May 2017, <https://www.rfc-editor.org/rfc/rfc8174>.
+
+Acknowledgments
+
+   This work was motivated by discussion of atomic multi-Track switching
+   in the MOQT working group.
+
+Change Log
+
+draft-sharma-moq-atomic-subscription-bundles-00
+
+   *  Initial version.
+
+Use of Generative AI
+
+   OpenAI Codex was used to assist with drafting and editing this
+   document.  All generated text was reviewed and approved by the
+   author.
+
+Author's Address
+
+   Aman Sharma
+   Meta
+   Email: amsharma@meta.com
