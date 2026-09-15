@@ -22,6 +22,7 @@ venue:
   mail: "moq@ietf.org"
   arch: "https://mailarchive.ietf.org/arch/browse/moq/"
   github: "sharmafb/draft-sharma-moq-atomic-subscription-bundles"
+  latest: "https://sharmafb.github.io/draft-sharma-moq-atomic-subscription-bundles/draft-sharma-moq-atomic-subscription-bundles.html"
 
 smart_quotes: no
 
