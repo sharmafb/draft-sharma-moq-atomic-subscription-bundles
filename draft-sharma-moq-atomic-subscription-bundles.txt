@@ -77,11 +77,12 @@ Table of Contents
    3.  Negotiation
    4.  Preparing a Bundle
    5.  BUNDLE_SWITCH
-   6.  Atomicity and Media Alignment
-   7.  Relay Processing
-   8.  Security Considerations
-   9.  IANA Considerations
-   10. Normative References
+   6.  Concurrent Operations
+   7.  Atomicity and Media Alignment
+   8.  Relay Processing
+   9.  Security Considerations
+   10. IANA Considerations
+   11. Normative References
    Acknowledgments
    Change Log
      draft-sharma-moq-atomic-subscription-bundles-00
@@ -154,9 +155,6 @@ Table of Contents
    consume state at the Publisher or its upstream peers, but does not
    send Object payloads to the subscriber.
 
-   After sending BUNDLE_SWITCH and before receiving its response, the
-   subscriber MUST NOT update or cancel a referenced subscription.
-
 5.  BUNDLE_SWITCH
 
    BUNDLE_SWITCH is a request sent as the first message on a new
@@ -199,16 +197,37 @@ Table of Contents
 
    The Publisher then sends REQUEST_OK on the BUNDLE_SWITCH stream; this
    response is called BUNDLE_SWITCH_OK.  Its Parameters and Track
-   Properties MUST be empty.  The Publisher MUST serialize BUNDLE_SWITCH
-   with any other operation that changes a referenced Forward State, so
-   validation and Commit use one consistent state.
+   Properties MUST be empty.
 
    The deactivated subscriptions remain Established with Forward State
    0.  They can be reactivated by a later BUNDLE_SWITCH or terminated
    using normal MOQT procedures.  A failure after Commit affects
    subscriptions independently and does not roll the switch back.
 
-6.  Atomicity and Media Alignment
+6.  Concurrent Operations
+
+   QUIC does not order operations sent on different streams.  The
+   Publisher MUST serialize BUNDLE_SWITCH with every operation that
+   updates or terminates a referenced subscription, including
+   REQUEST_UPDATE, subscriber cancellation using STOP_SENDING,
+   PUBLISH_DONE, expiration, and another overlapping BUNDLE_SWITCH.
+   Commit is the ordering point for BUNDLE_SWITCH.
+
+   If another operation is processed first and leaves a member
+   ineligible, the Publisher MUST reject BUNDLE_SWITCH with
+   INVALID_BUNDLE and apply none of its requested Forward State changes.
+   The earlier operation remains effective.  If BUNDLE_SWITCH commits
+   first, it succeeds and the later operation is processed normally
+   without rolling back the switch.  For example, cancellation of a
+   deactivating subscription before Commit causes the bundle switch to
+   fail; cancellation after Commit terminates the already-deactivated
+   subscription.
+
+   A subscriber that requires a particular order SHOULD wait for
+   BUNDLE_SWITCH_OK before sending a conflicting operation on another
+   stream.
+
+7.  Atomicity and Media Alignment
 
    Commit is an atomic control-plane transition at one Publisher or
    Relay.  QUIC streams are independent, so Objects sent before Commit
@@ -220,7 +239,7 @@ Table of Contents
    The operation is scoped to one MOQT Session.  It cannot atomically
    switch subscriptions held on different peers or Sessions.
 
-7.  Relay Processing
+8.  Relay Processing
 
    Request IDs are Session-local, so a Relay MUST NOT forward
    BUNDLE_SWITCH unchanged.  It performs the downstream Commit locally
@@ -232,7 +251,7 @@ Table of Contents
    Other downstream subscribers and upstream Forward States are outside
    the atomicity guarantee.
 
-8.  Security Considerations
+9.  Security Considerations
 
    The security considerations of [MOQT] apply.  BUNDLE_SWITCH does not
    bypass authorization on any member subscription.  A Publisher MUST
@@ -245,7 +264,7 @@ Table of Contents
    BUNDLE_SWITCH to alter another Session's subscriptions because
    Request IDs are Session-local.
 
-9.  IANA Considerations
+10.  IANA Considerations
 
    This document requests the following provisional registrations:
 
@@ -265,7 +284,7 @@ Table of Contents
 
                                  Table 1
 
-10.  Normative References
+11.  Normative References
 
    [MOQT]     Nandakumar, S., Vasiliev, V., Swett, I., and A. Frindell,
               "Media over QUIC Transport", Work in Progress, Internet-
