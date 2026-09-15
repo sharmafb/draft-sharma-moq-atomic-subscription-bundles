@@ -107,10 +107,6 @@ while the current bundle continues forwarding. It can consume state at the
 Publisher or its upstream peers, but does not send Object payloads to the
 subscriber.
 
-After sending BUNDLE_SWITCH and before receiving its response, the subscriber
-MUST NOT update or cancel a referenced subscription.
-
-
 # BUNDLE_SWITCH {#bundle-switch}
 
 BUNDLE_SWITCH is a request sent as the first message on a new bidirectional
@@ -152,14 +148,31 @@ have been published on that Track.
 
 The Publisher then sends REQUEST_OK on the BUNDLE_SWITCH stream; this response
 is called BUNDLE_SWITCH_OK. Its Parameters and Track Properties MUST be empty.
-The Publisher MUST serialize BUNDLE_SWITCH with any other operation that
-changes a referenced Forward State, so validation and Commit use one consistent
-state.
 
 The deactivated subscriptions remain Established with Forward State 0. They
 can be reactivated by a later BUNDLE_SWITCH or terminated using normal MOQT
 procedures. A failure after Commit affects subscriptions independently and
 does not roll the switch back.
+
+
+# Concurrent Operations {#concurrency}
+
+QUIC does not order operations sent on different streams. The Publisher MUST
+serialize BUNDLE_SWITCH with every operation that updates or terminates a
+referenced subscription, including REQUEST_UPDATE, subscriber cancellation
+using STOP_SENDING, PUBLISH_DONE, expiration, and another overlapping
+BUNDLE_SWITCH. Commit is the ordering point for BUNDLE_SWITCH.
+
+If another operation is processed first and leaves a member ineligible, the
+Publisher MUST reject BUNDLE_SWITCH with INVALID_BUNDLE and apply none of its
+requested Forward State changes. The earlier operation remains effective. If
+BUNDLE_SWITCH commits first, it succeeds and the later operation is processed
+normally without rolling back the switch. For example, cancellation of a
+deactivating subscription before Commit causes the bundle switch to fail;
+cancellation after Commit terminates the already-deactivated subscription.
+
+A subscriber that requires a particular order SHOULD wait for
+BUNDLE_SWITCH_OK before sending a conflicting operation on another stream.
 
 
 # Atomicity and Media Alignment {#atomicity}
